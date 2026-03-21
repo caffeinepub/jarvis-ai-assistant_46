@@ -259,14 +259,15 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen circuit-bg flex flex-col"
+      className="circuit-bg flex flex-col"
       style={{
+        height: "100dvh",
         background:
           "radial-gradient(ellipse at 50% 0%, oklch(0.13 0.03 225) 0%, oklch(0.08 0.022 230) 50%, oklch(0.05 0.015 235) 100%)",
       }}
     >
       {/* Nav bar */}
-      <header className="sticky top-0 z-50 px-4 py-3 flex justify-center">
+      <header className="flex-shrink-0 px-4 py-3 flex justify-center z-50">
         <div
           className="w-full max-w-3xl flex items-center justify-between px-5 py-2.5 rounded-full"
           style={{
@@ -390,7 +391,10 @@ export default function App() {
       </header>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col items-center px-4 pb-4 overflow-hidden">
+      <main
+        className="flex-1 flex flex-col items-center px-4 pb-2 overflow-hidden"
+        style={{ minHeight: 0 }}
+      >
         <AnimatePresence mode="wait">
           {view === "chat" ? (
             <motion.div
@@ -403,14 +407,14 @@ export default function App() {
               style={{ minHeight: 0 }}
             >
               {/* Arc Reactor hero */}
-              <div className="flex justify-center py-4 sm:py-6">
+              <div className="flex-shrink-0 flex justify-center py-3 sm:py-4">
                 <ArcReactor
                   isActive={isReactorActive}
                   isSpeaking={isSpeaking}
                   size={
                     typeof window !== "undefined" && window.innerWidth < 640
-                      ? 180
-                      : 260
+                      ? 140
+                      : 200
                   }
                 />
               </div>
@@ -425,7 +429,6 @@ export default function App() {
                   boxShadow:
                     "0 0 30px rgba(32,214,255,0.05), 0 8px 32px rgba(0,0,0,0.4)",
                   minHeight: 0,
-                  maxHeight: "calc(100vh - 320px)",
                 }}
               >
                 <ChatView
@@ -457,7 +460,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="text-center py-3 px-4">
+      <footer className="flex-shrink-0 text-center py-2 px-4">
         <p
           className="text-[10px] font-orbitron"
           style={{ color: "rgba(143,167,183,0.35)" }}
