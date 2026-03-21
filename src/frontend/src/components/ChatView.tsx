@@ -29,23 +29,51 @@ export function ChatView({
   isVoiceMode,
 }: ChatViewProps) {
   const [input, setInput] = useState("");
+  const [userScrolled, setUserScrolled] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (transcript) setInput(transcript);
   }, [transcript]);
 
+  // Auto-scroll to bottom only when not manually scrolled up
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on message/status changes
   useEffect(() => {
+    if (!userScrolled) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, status, userScrolled]);
+
+  // Detect manual scroll up to pause auto-scroll
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    setUserScrolled(!atBottom);
+  };
+
+  // When new message arrives and user was at bottom, re-enable auto-scroll
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on new messages
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (atBottom) setUserScrolled(false);
+  }, [messages.length]);
+
+  const scrollToBottom = () => {
+    setUserScrolled(false);
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, status]);
+  };
 
   const handleSend = () => {
     const text = input.trim();
     if (!text || status === "processing") return;
     onSendMessage(text);
     setInput("");
+    setUserScrolled(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -140,15 +168,51 @@ export function ChatView({
         )}
       </AnimatePresence>
 
-      {/* Messages */}
-      <div
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-hide"
-        style={{ minHeight: 0 }}
-      >
-        {messages.map((msg, i) => (
-          <ChatBubble key={msg.id} message={msg} index={i} />
-        ))}
-        <div ref={bottomRef} />
+      {/* Messages scroll area */}
+      <div className="flex-1 relative" style={{ minHeight: 0 }}>
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="absolute inset-0 overflow-y-auto px-4 py-4 space-y-4 jarvis-scrollbar"
+        >
+          {messages.map((msg, i) => (
+            <ChatBubble key={msg.id} message={msg} index={i} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Scroll to bottom button */}
+        <AnimatePresence>
+          {userScrolled && (
+            <motion.button
+              type="button"
+              onClick={scrollToBottom}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.15 }}
+              className="absolute bottom-4 right-4 w-8 h-8 rounded-full flex items-center justify-center z-10"
+              style={{
+                background: "rgba(8,20,26,0.9)",
+                border: "1px solid rgba(32,214,255,0.5)",
+                boxShadow: "0 0 12px rgba(32,214,255,0.3)",
+                color: "#20D6FF",
+              }}
+              aria-label="Scroll to latest"
+            >
+              <svg
+                role="img"
+                aria-label="Scroll to latest"
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="currentColor"
+              >
+                <path d="M6 9L1 4h10L6 9z" />
+              </svg>
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Hands-free mode indicator */}

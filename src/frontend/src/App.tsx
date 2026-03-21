@@ -36,23 +36,6 @@ function loadSettings(): AppSettings {
   return DEFAULT_SETTINGS;
 }
 
-function loadMessages(userName: string): Message[] {
-  try {
-    const key = `jarvis_messages_${userName}`;
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parsed.map((m: Message) => ({
-        ...m,
-        timestamp: new Date(m.timestamp),
-      }));
-    }
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
 export default function App() {
   const [userName, setUserName] = useState<string>(
     () => localStorage.getItem(USERNAME_KEY) || "",
@@ -82,34 +65,18 @@ export default function App() {
     clearTranscript,
   } = useSpeechRecognition();
 
-  // When userName changes, load that user's messages
+  // When userName changes, start a fresh session (no persisted chat loaded)
   useEffect(() => {
     if (!userName) return;
-    const saved = loadMessages(userName);
-    if (saved.length === 0) {
-      setMessages([
-        {
-          id: makeId(),
-          role: "jarvis",
-          content: `${getGreeting(userName)} I am J.A.R.V.I.S., your personal AI assistant. All systems are online and operational. How may I be of service?`,
-          timestamp: new Date(),
-        },
-      ]);
-    } else {
-      setMessages(saved);
-    }
+    setMessages([
+      {
+        id: makeId(),
+        role: "jarvis",
+        content: `${getGreeting(userName)} I am J.A.R.V.I.S., your personal AI assistant. All systems are online and operational. How may I be of service?`,
+        timestamp: new Date(),
+      },
+    ]);
   }, [userName]);
-
-  // Persist messages per user
-  useEffect(() => {
-    if (!userName || messages.length === 0) return;
-    try {
-      const key = `jarvis_messages_${userName}`;
-      localStorage.setItem(key, JSON.stringify(messages.slice(-50)));
-    } catch {
-      // ignore
-    }
-  }, [messages, userName]);
 
   // Sync listening status
   useEffect(() => {
@@ -131,7 +98,6 @@ export default function App() {
   }, [transcript]);
 
   // Auto-send transcript when voice mode and speech ends
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only runs on isListening change
   useEffect(() => {
     const wasListening = prevListeningRef.current;
     prevListeningRef.current = isListening;
@@ -278,8 +244,8 @@ export default function App() {
 
   const handleChangeName = useCallback(() => {
     localStorage.removeItem(USERNAME_KEY);
-    setUserName("");
     setMessages([]);
+    setUserName("");
   }, []);
 
   const isReactorActive =
