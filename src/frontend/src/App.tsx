@@ -132,7 +132,7 @@ function getActivePersonality(settings: AppSettings): string {
 
 // Photo usage tracking (5 per day per user)
 function getPhotoUsageKey(userName: string): string {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = new Date().toISOString().slice(0, 10);
   return `jarvis_photos_${userName}_${today}`;
 }
 
@@ -153,6 +153,22 @@ function incrementPhotoUsage(userName: string): void {
   } catch {
     // ignore
   }
+}
+
+// Check if transcript contains a stop command
+function isStopCommand(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return (
+    t === "stop" ||
+    t === "stop jarvis" ||
+    t === "stop it" ||
+    t === "stop speaking" ||
+    t === "quiet" ||
+    t === "be quiet" ||
+    t === "shut up" ||
+    t.startsWith("stop ") ||
+    t.endsWith(" stop")
+  );
 }
 
 export default function App() {
@@ -232,6 +248,82 @@ export default function App() {
     }
   }, [isListening]);
 
+  // ── Background stop-word detection while JARVIS is speaking ──────────────
+  // When JARVIS is speaking in hands-free mode, listen in background for "stop"
+  const stopListenerRef = useRef<{
+    recognition: {
+      stop: () => void;
+      abort: () => void;
+    } | null;
+  }>({ recognition: null });
+
+  useEffect(() => {
+    if (status !== "speaking" || !isVoiceMode) {
+      // Clean up any existing stop listener
+      if (stopListenerRef.current.recognition) {
+        stopListenerRef.current.recognition.abort();
+        stopListenerRef.current.recognition = null;
+      }
+      return;
+    }
+
+    // Start background recognition to detect stop command
+    const SpeechRecognitionCtor =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      stopListenerRef.current.recognition = recognition;
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+
+      recognition.onresult = (e: { results: SpeechRecognitionResultList }) => {
+        let heard = "";
+        for (let i = 0; i < e.results.length; i++) {
+          heard += e.results[i][0]?.transcript ?? "";
+        }
+        if (isStopCommand(heard)) {
+          recognition.abort();
+          stopListenerRef.current.recognition = null;
+          // Stop JARVIS immediately
+          isVoiceModeRef.current = false;
+          setIsVoiceMode(false);
+          stopSpeaking();
+          setStatus("idle");
+        }
+      };
+
+      recognition.onend = () => {
+        // If still speaking and voice mode still on, restart stop listener
+        if (
+          stopListenerRef.current.recognition === recognition &&
+          isVoiceModeRef.current
+        ) {
+          stopListenerRef.current.recognition = null;
+          // Will re-trigger via status/isVoiceMode dep change or next render
+        }
+      };
+
+      recognition.onerror = () => {
+        stopListenerRef.current.recognition = null;
+      };
+
+      recognition.start();
+    } catch {
+      // Speech recognition failed to start — ignore
+    }
+
+    return () => {
+      if (stopListenerRef.current.recognition) {
+        stopListenerRef.current.recognition.abort();
+        stopListenerRef.current.recognition = null;
+      }
+    };
+  }, [status, isVoiceMode, stopSpeaking]);
+  // ─────────────────────────────────────────────────────────────────────────
+
   const handleClearChat = useCallback(() => {
     if (!userName) return;
     setMessages([makeGreetingMessage(userName)]);
@@ -242,11 +334,12 @@ export default function App() {
       if (!text.trim() && !imageData) return;
 
       // Stop command: just stop voice, don't send to AI
-      if (text.trim().toLowerCase() === "stop") {
+      if (isStopCommand(text) && !imageData) {
         stopSpeaking();
         setIsVoiceMode(false);
         isVoiceModeRef.current = false;
         clearTranscript();
+        setStatus("idle");
         return;
       }
 
