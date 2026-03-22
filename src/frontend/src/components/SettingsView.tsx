@@ -8,8 +8,16 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { Globe, Mic, Save, Volume2, Zap } from "lucide-react";
-import { motion } from "motion/react";
+import {
+  ChevronDown,
+  Globe,
+  Info,
+  Mic,
+  Save,
+  Volume2,
+  Zap,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import type { AppSettings } from "../types";
 
@@ -18,9 +26,65 @@ interface SettingsViewProps {
   onSave: (settings: AppSettings) => void;
 }
 
+const capabilities = [
+  {
+    category: "Voice & Chat",
+    icon: "🎙️",
+    items: [
+      "Voice conversation via microphone",
+      "Text-based chat input",
+      "Hands-free mode — auto-listens after each reply",
+      "Text-to-Speech output (JARVIS voice)",
+      'Say "stop" to halt voice without ending the session',
+    ],
+  },
+  {
+    category: "Language Support",
+    icon: "🌐",
+    items: [
+      "English — default response language",
+      'Hindi — say "speak Hindi"',
+      'Hinglish — say "speak Hinglish"',
+      'Switch back anytime — say "speak in English"',
+    ],
+  },
+  {
+    category: "AI Intelligence",
+    icon: "🤖",
+    items: [
+      "Powered by Groq (llama-3.1-8b-instant) as primary AI",
+      "Auto-switches to Gemini, OpenAI, DeepSeek if quota runs out",
+      "Announces API switch in chat for transparency",
+      "Responds to general questions, advice, and conversations",
+    ],
+  },
+  {
+    category: "Customization",
+    icon: "⚙️",
+    items: [
+      "Adjust voice speed in settings",
+      "Change response language from settings",
+      "Toggle speech recognition on or off",
+      "Toggle Text-to-Speech on or off",
+    ],
+  },
+  {
+    category: "About JARVIS",
+    icon: "ℹ️",
+    items: [
+      "Built by Rohit Yadav",
+      "Product of Yadav Industries",
+      "Inspired by Iron Man's J.A.R.V.I.S. AI assistant",
+      "Accessible to all users — no login required",
+      "Can be added to phone home screen for app-like experience",
+    ],
+  },
+];
+
 export function SettingsView({ settings, onSave }: SettingsViewProps) {
   const [local, setLocal] = useState<AppSettings>({ ...settings });
   const [saved, setSaved] = useState(false);
+  const [capOpen, setCapOpen] = useState(false);
 
   const handleSave = () => {
     onSave(local);
@@ -54,6 +118,84 @@ export function SettingsView({ settings, onSave }: SettingsViewProps) {
         <p className="text-xs" style={{ color: "rgba(143,167,183,0.7)" }}>
           Adjust J.A.R.V.I.S. operational parameters
         </p>
+      </div>
+
+      {/* What Jarvis Can Do */}
+      <div className="rounded-xl overflow-hidden" style={cardStyle}>
+        <button
+          type="button"
+          onClick={() => setCapOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 transition-all duration-200"
+          style={{
+            background: capOpen ? "rgba(32,214,255,0.08)" : "transparent",
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Info size={14} style={{ color: "#20D6FF" }} />
+            <span
+              className="text-xs font-orbitron uppercase tracking-wider"
+              style={{ color: "#20D6FF" }}
+            >
+              What Jarvis Can Do
+            </span>
+          </div>
+          <motion.div
+            animate={{ rotate: capOpen ? 180 : 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <ChevronDown size={14} style={{ color: "#20D6FF" }} />
+          </motion.div>
+        </button>
+
+        <AnimatePresence initial={false}>
+          {capOpen && (
+            <motion.div
+              key="cap-content"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              style={{ overflow: "hidden" }}
+            >
+              <div
+                className="px-4 pb-4 space-y-4"
+                style={{
+                  borderTop: "1px solid rgba(32,214,255,0.12)",
+                  paddingTop: "16px",
+                }}
+              >
+                {capabilities.map((cap) => (
+                  <div key={cap.category}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm">{cap.icon}</span>
+                      <span
+                        className="text-xs font-orbitron uppercase tracking-wider"
+                        style={{ color: "rgba(32,214,255,0.85)" }}
+                      >
+                        {cap.category}
+                      </span>
+                    </div>
+                    <ul className="space-y-1 pl-6">
+                      {cap.items.map((item) => (
+                        <li
+                          key={item}
+                          className="text-xs flex items-start gap-2"
+                          style={{ color: "rgba(143,167,183,0.9)" }}
+                        >
+                          <span
+                            className="mt-1.5 w-1 h-1 rounded-full flex-shrink-0"
+                            style={{ background: "rgba(32,214,255,0.5)" }}
+                          />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Language */}

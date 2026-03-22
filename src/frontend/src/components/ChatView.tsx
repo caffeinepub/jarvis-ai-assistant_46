@@ -1,4 +1,4 @@
-import { Loader2, Mic, MicOff, Send } from "lucide-react";
+import { Loader2, Mic, MicOff, Send, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { AppSettings, AppStatus, Message } from "../types";
@@ -15,6 +15,7 @@ interface ChatViewProps {
   transcript: string;
   speechSupported: boolean;
   isVoiceMode: boolean;
+  onClearChat?: () => void;
 }
 
 export function ChatView({
@@ -27,6 +28,7 @@ export function ChatView({
   transcript,
   speechSupported,
   isVoiceMode,
+  onClearChat,
 }: ChatViewProps) {
   const [input, setInput] = useState("");
   const [userScrolled, setUserScrolled] = useState(false);
@@ -123,6 +125,8 @@ export function ChatView({
   const micColor =
     micIsActive || isVoiceMode ? "#20D6FF" : "rgba(143,167,183,0.8)";
 
+  const showClearButton = messages.length > 1 && !!onClearChat;
+
   return (
     <div className="flex flex-col h-full">
       {/* Status banner */}
@@ -170,6 +174,34 @@ export function ChatView({
 
       {/* Messages scroll area */}
       <div className="flex-1 relative" style={{ minHeight: 0 }}>
+        {/* Clear chat button - top right of scroll area */}
+        <AnimatePresence>
+          {showClearButton && (
+            <motion.button
+              type="button"
+              onClick={onClearChat}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.15 }}
+              className="absolute top-3 right-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-200"
+              style={{
+                background: "rgba(255,59,59,0.15)",
+                border: "1px solid rgba(255,59,59,0.4)",
+                boxShadow: "0 0 8px rgba(255,59,59,0.2)",
+                color: "#FF3B3B",
+              }}
+              aria-label="Clear chat history"
+              data-ocid="chat.delete_button"
+            >
+              <Trash2 size={11} />
+              <span className="font-orbitron text-[9px] uppercase tracking-widest hidden sm:inline">
+                Clear
+              </span>
+            </motion.button>
+          )}
+        </AnimatePresence>
+
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}
@@ -267,7 +299,7 @@ export function ChatView({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Speak or type your query..."
+            placeholder='Speak or type · Try "search for..."'
             disabled={status === "processing"}
             className="flex-1 bg-transparent outline-none text-sm"
             style={{

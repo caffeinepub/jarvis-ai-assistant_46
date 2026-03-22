@@ -53,6 +53,23 @@ function detectLangCommand(text: string): LangCommand {
   return null;
 }
 
+function detectSearchCommand(text: string): string | null {
+  const t = text.trim();
+  const patterns = [
+    /^search\s+for\s+(.+)$/i,
+    /^search\s+(.+)$/i,
+    /^google\s+for\s+(.+)$/i,
+    /^google\s+(.+)$/i,
+    /^find\s+(.+)\s+on\s+google$/i,
+    /^find\s+(.+)$/i,
+  ];
+  for (const pattern of patterns) {
+    const match = t.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
 const LANG_CONFIRM: Record<string, string> = {
   hindi: "Bilkul, ab main Hindi mein baat karunga. Aap kya jaanna chahte hain?",
   hinglish: "Sure boss, ab main Hinglish mein bolunga. Batao kya kaam hai?",
@@ -86,6 +103,15 @@ function loadSettings(): AppSettings {
     // ignore
   }
   return DEFAULT_SETTINGS;
+}
+
+function makeGreetingMessage(name: string): Message {
+  return {
+    id: makeId(),
+    role: "jarvis",
+    content: `${getGreeting(name)} I am J.A.R.V.I.S., your personal AI assistant. All systems are online and operational. How may I be of service?`,
+    timestamp: new Date(),
+  };
 }
 
 export default function App() {
@@ -126,14 +152,7 @@ export default function App() {
   // When userName changes, start a fresh session (no persisted chat loaded)
   useEffect(() => {
     if (!userName) return;
-    setMessages([
-      {
-        id: makeId(),
-        role: "jarvis",
-        content: `${getGreeting(userName)} I am J.A.R.V.I.S., your personal AI assistant. All systems are online and operational. How may I be of service?`,
-        timestamp: new Date(),
-      },
-    ]);
+    setMessages([makeGreetingMessage(userName)]);
   }, [userName]);
 
   // Sync listening status
@@ -171,6 +190,11 @@ export default function App() {
     }
   }, [isListening]);
 
+  const handleClearChat = useCallback(() => {
+    if (!userName) return;
+    setMessages([makeGreetingMessage(userName)]);
+  }, [userName]);
+
   const handleSendMessage = useCallback(
     async (text: string) => {
       if (!text.trim()) return;
@@ -181,6 +205,64 @@ export default function App() {
         setIsVoiceMode(false);
         isVoiceModeRef.current = false;
         clearTranscript();
+        return;
+      }
+
+      // Google search command detection
+      const searchQuery = detectSearchCommand(text.trim());
+      if (searchQuery) {
+        stopListening();
+        clearTranscript();
+
+        const userMsg: Message = {
+          id: makeId(),
+          role: "user",
+          content: text,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, userMsg]);
+
+        const searchResponse = `🔍 Opening Google search for "${searchQuery}", sir. Results loading in a new tab.`;
+        const jarvisMsg: Message = {
+          id: makeId(),
+          role: "jarvis",
+          content: searchResponse,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, jarvisMsg]);
+
+        window.open(
+          `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`,
+          "_blank",
+        );
+
+        if (settingsRef.current.ttsEnabled) {
+          setStatus("speaking");
+          await speak(
+            searchResponse,
+            settingsRef.current.voiceSpeed,
+            settingsRef.current.voiceName,
+            () => {
+              setStatus("idle");
+              if (isVoiceModeRef.current) {
+                setTimeout(() => {
+                  if (isVoiceModeRef.current) {
+                    startListening(settingsRef.current.language);
+                  }
+                }, 300);
+              }
+            },
+          );
+        } else {
+          setStatus("idle");
+          if (isVoiceModeRef.current) {
+            setTimeout(() => {
+              if (isVoiceModeRef.current) {
+                startListening(settingsRef.current.language);
+              }
+            }, 300);
+          }
+        }
         return;
       }
 
@@ -267,7 +349,20 @@ export default function App() {
 
       try {
         const history = [...messages, userMsg];
-        const response = await generateResponse(history, settings.language);
+        const response = await generateResponse(
+          history,
+          settings.language,
+          (fromApi, toApi) => {
+            // Show API switch notification in chat
+            const switchMsg: Message = {
+              id: makeId(),
+              role: "jarvis",
+              content: `⚡ Switching to ${toApi} API... ${fromApi} quota exhausted. Rerouting neural link, sir.`,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, switchMsg]);
+          },
+        );
 
         const jarvisMsg: Message = {
           id: makeId(),
@@ -582,6 +677,7 @@ export default function App() {
                   transcript={transcript}
                   speechSupported={speechSupported}
                   isVoiceMode={isVoiceMode}
+                  onClearChat={handleClearChat}
                 />
               </div>
             </motion.div>
