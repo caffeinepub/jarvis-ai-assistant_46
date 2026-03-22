@@ -13,6 +13,58 @@ import { DEFAULT_SETTINGS } from "./types";
 const SETTINGS_KEY = "jarvis_settings";
 const USERNAME_KEY = "jarvis_username";
 
+type LangCommand = { lang: "hindi" | "hinglish" | "english" } | null;
+
+function detectLangCommand(text: string): LangCommand {
+  const t = text.trim().toLowerCase();
+  if (
+    [
+      "speak hindi",
+      "speak in hindi",
+      "hindi mein bolo",
+      "hindi me bolo",
+      "ab hindi mein bolo",
+      "ab hindi me bolo",
+    ].includes(t)
+  )
+    return { lang: "hindi" };
+  if (
+    [
+      "speak hinglish",
+      "speak in hinglish",
+      "hinglish mein bolo",
+      "hinglish me bolo",
+      "ab hinglish mein bolo",
+      "ab hinglish me bolo",
+    ].includes(t)
+  )
+    return { lang: "hinglish" };
+  if (
+    [
+      "speak english",
+      "speak in english",
+      "english mein bolo",
+      "english me bolo",
+      "ab english mein bolo",
+      "ab english me bolo",
+    ].includes(t)
+  )
+    return { lang: "english" };
+  return null;
+}
+
+const LANG_CONFIRM: Record<string, string> = {
+  hindi: "Bilkul, ab main Hindi mein baat karunga. Aap kya jaanna chahte hain?",
+  hinglish: "Sure boss, ab main Hinglish mein bolunga. Batao kya kaam hai?",
+  english: "Switching back to English. How may I assist you, sir?",
+};
+
+const LANG_BADGE: Record<string, string> = {
+  hindi: "HI",
+  hinglish: "HG",
+  english: "EN",
+};
+
 function getGreeting(name: string): string {
   const hour = new Date().getHours();
   const salutation = name ? `, ${name}` : ", sir";
@@ -48,6 +100,12 @@ export default function App() {
   // Voice mode state
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const isVoiceModeRef = useRef(false);
+
+  // Settings ref to avoid stale closures in lang command handler
+  const settingsRef = useRef<AppSettings>(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -117,12 +175,80 @@ export default function App() {
     async (text: string) => {
       if (!text.trim()) return;
 
-      // Stop command: just stop voice, don't send to Gemini
+      // Stop command: just stop voice, don't send to AI
       if (text.trim().toLowerCase() === "stop") {
         stopSpeaking();
         setIsVoiceMode(false);
         isVoiceModeRef.current = false;
         clearTranscript();
+        return;
+      }
+
+      // Language command detection
+      const langCmd = detectLangCommand(text.trim());
+      if (langCmd) {
+        stopListening();
+        clearTranscript();
+
+        // Add user message bubble
+        const userMsg: Message = {
+          id: makeId(),
+          role: "user",
+          content: text,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, userMsg]);
+
+        // Update settings with new language
+        const newSettings: AppSettings = {
+          ...settingsRef.current,
+          language: langCmd.lang,
+        };
+        setSettings(newSettings);
+        try {
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+        } catch {
+          // ignore
+        }
+
+        // Add JARVIS confirmation bubble
+        const confirmText = LANG_CONFIRM[langCmd.lang];
+        const jarvisMsg: Message = {
+          id: makeId(),
+          role: "jarvis",
+          content: confirmText,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, jarvisMsg]);
+
+        // Speak confirmation then resume listening
+        if (newSettings.ttsEnabled) {
+          setStatus("speaking");
+          await speak(
+            confirmText,
+            newSettings.voiceSpeed,
+            newSettings.voiceName,
+            () => {
+              setStatus("idle");
+              if (isVoiceModeRef.current) {
+                setTimeout(() => {
+                  if (isVoiceModeRef.current) {
+                    startListening(langCmd.lang);
+                  }
+                }, 300);
+              }
+            },
+          );
+        } else {
+          setStatus("idle");
+          if (isVoiceModeRef.current) {
+            setTimeout(() => {
+              if (isVoiceModeRef.current) {
+                startListening(langCmd.lang);
+              }
+            }, 300);
+          }
+        }
         return;
       }
 
@@ -327,8 +453,23 @@ export default function App() {
             ))}
           </nav>
 
-          {/* User + Status */}
+          {/* User + Status + Lang Badge */}
           <div className="flex items-center gap-3">
+            {/* Language badge */}
+            <div
+              className="font-orbitron text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-full hidden sm:flex items-center"
+              style={{
+                background: "rgba(32,214,255,0.1)",
+                border: "1px solid rgba(32,214,255,0.35)",
+                color: "#20D6FF",
+                boxShadow: "0 0 8px rgba(32,214,255,0.25)",
+              }}
+              title={`Language: ${settings.language}`}
+              data-ocid="nav.language.toggle"
+            >
+              {LANG_BADGE[settings.language] ?? "EN"}
+            </div>
+
             {/* User name */}
             <div className="flex items-center gap-1.5">
               <span
