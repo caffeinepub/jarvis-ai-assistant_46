@@ -1,18 +1,28 @@
 import { motion } from "motion/react";
-import { useRef } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 interface NameEntryScreenProps {
   onEnter: (name: string) => void;
 }
 
+const ALLOWED_NAMES = ["rohit", "krishna", "vanshu", "ajju", "balram"];
+
 export function NameEntryScreen({ onEnter }: NameEntryScreenProps) {
   const [name, setName] = useState("");
+  const [accessError, setAccessError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
+    const normalized = trimmed.toLowerCase();
+    if (!ALLOWED_NAMES.includes(normalized)) {
+      setAccessError(
+        "Access denied. JARVIS is restricted to authorized personnel only, sir.",
+      );
+      return;
+    }
+    setAccessError("");
     onEnter(trimmed);
   };
 
@@ -108,29 +118,59 @@ export function NameEntryScreen({ onEnter }: NameEntryScreenProps) {
           className="rounded-2xl p-6"
           style={{
             background: "rgba(8,20,26,0.85)",
-            border: "1px solid rgba(32,214,255,0.2)",
+            border: `1px solid ${
+              accessError ? "rgba(255,59,59,0.4)" : "rgba(32,214,255,0.2)"
+            }`,
             backdropFilter: "blur(16px)",
-            boxShadow:
-              "0 0 30px rgba(32,214,255,0.08), 0 8px 32px rgba(0,0,0,0.5)",
+            boxShadow: accessError
+              ? "0 0 30px rgba(255,59,59,0.12), 0 8px 32px rgba(0,0,0,0.5)"
+              : "0 0 30px rgba(32,214,255,0.08), 0 8px 32px rgba(0,0,0,0.5)",
+            transition: "border 0.3s, box-shadow 0.3s",
           }}
         >
           <input
             ref={inputRef}
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (accessError) setAccessError("");
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Enter your name..."
             className="w-full bg-transparent outline-none text-sm text-center mb-5"
             style={{
               color: "oklch(0.94 0.015 220)",
               caretColor: "#20D6FF",
-              borderBottom: "1px solid rgba(32,214,255,0.3)",
+              borderBottom: `1px solid ${
+                accessError ? "rgba(255,59,59,0.5)" : "rgba(32,214,255,0.3)"
+              }`,
               paddingBottom: "10px",
               letterSpacing: "0.1em",
             }}
             data-ocid="name_entry.input"
           />
+
+          {/* Access denied error */}
+          {accessError && (
+            <motion.p
+              className="font-orbitron text-center mb-4"
+              style={{
+                color: "rgba(255,59,59,0.9)",
+                fontSize: "0.62rem",
+                letterSpacing: "0.05em",
+                textShadow:
+                  "0 0 8px rgba(255,59,59,0.8), 0 0 16px rgba(255,59,59,0.4)",
+                lineHeight: 1.5,
+              }}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              data-ocid="name_entry.error_state"
+            >
+              ⚠ {accessError}
+            </motion.p>
+          )}
 
           <button
             type="button"

@@ -100,19 +100,60 @@ export function ChatBubble({ message, index }: ChatBubbleProps) {
     >
       <div className="flex flex-col items-end gap-1">
         <div
-          className="rounded-2xl rounded-tr-sm px-4 py-3"
+          className="rounded-2xl rounded-tr-sm overflow-hidden"
           style={{
             background: "rgba(20,40,55,0.9)",
             border: "1px solid rgba(32,214,255,0.15)",
             backdropFilter: "blur(8px)",
           }}
         >
-          <p
-            className="text-sm leading-relaxed"
-            style={{ color: "oklch(0.92 0.012 220)" }}
-          >
-            {message.content}
-          </p>
+          {/* Show image if present */}
+          {message.imageData && (
+            <div className="relative">
+              <img
+                src={message.imageData}
+                alt="Sent"
+                className="max-w-[200px] sm:max-w-[260px] w-full object-cover"
+                style={{
+                  maxHeight: "200px",
+                  display: "block",
+                }}
+              />
+              <div
+                className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full"
+                style={{
+                  background: "rgba(8,20,26,0.8)",
+                  border: "1px solid rgba(32,214,255,0.3)",
+                }}
+              >
+                <span
+                  className="font-orbitron text-[8px] uppercase tracking-widest"
+                  style={{ color: "rgba(32,214,255,0.8)" }}
+                >
+                  📷
+                </span>
+              </div>
+            </div>
+          )}
+          {/* Show text content if present */}
+          {message.content &&
+            message.content !== "What do you see in this image?" && (
+              <p
+                className="text-sm leading-relaxed px-4 py-3"
+                style={{ color: "oklch(0.92 0.012 220)" }}
+              >
+                {message.content}
+              </p>
+            )}
+          {/* If only image with default caption, don't show text */}
+          {message.imageData && !message.content && (
+            <p
+              className="text-sm leading-relaxed px-4 py-3"
+              style={{ color: "oklch(0.92 0.012 220)" }}
+            >
+              What do you see in this image?
+            </p>
+          )}
         </div>
         <span
           className="text-[10px] pr-1"

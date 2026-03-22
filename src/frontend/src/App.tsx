@@ -8,10 +8,11 @@ import { useGemini } from "./hooks/useGemini";
 import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
 import { useTTS } from "./hooks/useTTS";
 import type { AppSettings, AppStatus, Message } from "./types";
-import { DEFAULT_SETTINGS } from "./types";
+import { DEFAULT_SETTINGS, VOICE_PROFILES } from "./types";
 
 const SETTINGS_KEY = "jarvis_settings";
 const USERNAME_KEY = "jarvis_username";
+const MAX_PHOTOS_PER_DAY = 5;
 
 type LangCommand = { lang: "hindi" | "hinglish" | "english" } | null;
 
@@ -114,6 +115,46 @@ function makeGreetingMessage(name: string): Message {
   };
 }
 
+function getActiveProfile(settings: AppSettings) {
+  return (
+    VOICE_PROFILES.find((v) => v.id === settings.selectedVoice) ??
+    VOICE_PROFILES[0]
+  );
+}
+
+function getActiveTtsVoice(settings: AppSettings): string {
+  return getActiveProfile(settings).ttsVoice;
+}
+
+function getActivePersonality(settings: AppSettings): string {
+  return getActiveProfile(settings).personalityPrompt;
+}
+
+// Photo usage tracking (5 per day per user)
+function getPhotoUsageKey(userName: string): string {
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  return `jarvis_photos_${userName}_${today}`;
+}
+
+function getPhotoUsageCount(userName: string): number {
+  try {
+    const val = localStorage.getItem(getPhotoUsageKey(userName));
+    return val ? Number.parseInt(val, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function incrementPhotoUsage(userName: string): void {
+  try {
+    const key = getPhotoUsageKey(userName);
+    const cur = getPhotoUsageCount(userName);
+    localStorage.setItem(key, String(cur + 1));
+  } catch {
+    // ignore
+  }
+}
+
 export default function App() {
   const [userName, setUserName] = useState<string>(
     () => localStorage.getItem(USERNAME_KEY) || "",
@@ -122,6 +163,7 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<AppStatus>("idle");
+  const [photosUsedToday, setPhotosUsedToday] = useState<number>(0);
 
   // Voice mode state
   const [isVoiceMode, setIsVoiceMode] = useState(false);
@@ -149,10 +191,11 @@ export default function App() {
     clearTranscript,
   } = useSpeechRecognition();
 
-  // When userName changes, start a fresh session (no persisted chat loaded)
+  // When userName changes, start a fresh session
   useEffect(() => {
     if (!userName) return;
     setMessages([makeGreetingMessage(userName)]);
+    setPhotosUsedToday(getPhotoUsageCount(userName));
   }, [userName]);
 
   // Sync listening status
@@ -179,7 +222,6 @@ export default function App() {
     const wasListening = prevListeningRef.current;
     prevListeningRef.current = isListening;
 
-    // Transition: listening -> not listening
     if (
       wasListening &&
       !isListening &&
@@ -196,8 +238,8 @@ export default function App() {
   }, [userName]);
 
   const handleSendMessage = useCallback(
-    async (text: string) => {
-      if (!text.trim()) return;
+    async (text: string, imageData?: string) => {
+      if (!text.trim() && !imageData) return;
 
       // Stop command: just stop voice, don't send to AI
       if (text.trim().toLowerCase() === "stop") {
@@ -208,130 +250,134 @@ export default function App() {
         return;
       }
 
-      // Google search command detection
-      const searchQuery = detectSearchCommand(text.trim());
-      if (searchQuery) {
-        stopListening();
-        clearTranscript();
+      // Google search command detection (only for text-only messages)
+      if (!imageData) {
+        const searchQuery = detectSearchCommand(text.trim());
+        if (searchQuery) {
+          stopListening();
+          clearTranscript();
 
-        const userMsg: Message = {
-          id: makeId(),
-          role: "user",
-          content: text,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, userMsg]);
+          const userMsg: Message = {
+            id: makeId(),
+            role: "user",
+            content: text,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, userMsg]);
 
-        const searchResponse = `🔍 Opening Google search for "${searchQuery}", sir. Results loading in a new tab.`;
-        const jarvisMsg: Message = {
-          id: makeId(),
-          role: "jarvis",
-          content: searchResponse,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, jarvisMsg]);
+          const searchResponse = `🔍 Opening Google search for "${searchQuery}", sir. Results loading in a new tab.`;
+          const jarvisMsg: Message = {
+            id: makeId(),
+            role: "jarvis",
+            content: searchResponse,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, jarvisMsg]);
 
-        window.open(
-          `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`,
-          "_blank",
-        );
-
-        if (settingsRef.current.ttsEnabled) {
-          setStatus("speaking");
-          await speak(
-            searchResponse,
-            settingsRef.current.voiceSpeed,
-            settingsRef.current.voiceName,
-            () => {
-              setStatus("idle");
-              if (isVoiceModeRef.current) {
-                setTimeout(() => {
-                  if (isVoiceModeRef.current) {
-                    startListening(settingsRef.current.language);
-                  }
-                }, 300);
-              }
-            },
+          window.open(
+            `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`,
+            "_blank",
           );
-        } else {
-          setStatus("idle");
-          if (isVoiceModeRef.current) {
-            setTimeout(() => {
-              if (isVoiceModeRef.current) {
-                startListening(settingsRef.current.language);
-              }
-            }, 300);
+
+          if (settingsRef.current.ttsEnabled) {
+            const profile = getActiveProfile(settingsRef.current);
+            setStatus("speaking");
+            await speak(
+              searchResponse,
+              settingsRef.current.voiceSpeed,
+              getActiveTtsVoice(settingsRef.current),
+              () => {
+                setStatus("idle");
+                if (isVoiceModeRef.current) {
+                  setTimeout(() => {
+                    if (isVoiceModeRef.current) {
+                      startListening(settingsRef.current.language);
+                    }
+                  }, 300);
+                }
+              },
+              profile.browserPitch,
+              profile.preferFemale,
+            );
+          } else {
+            setStatus("idle");
+            if (isVoiceModeRef.current) {
+              setTimeout(() => {
+                if (isVoiceModeRef.current) {
+                  startListening(settingsRef.current.language);
+                }
+              }, 300);
+            }
           }
-        }
-        return;
-      }
-
-      // Language command detection
-      const langCmd = detectLangCommand(text.trim());
-      if (langCmd) {
-        stopListening();
-        clearTranscript();
-
-        // Add user message bubble
-        const userMsg: Message = {
-          id: makeId(),
-          role: "user",
-          content: text,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, userMsg]);
-
-        // Update settings with new language
-        const newSettings: AppSettings = {
-          ...settingsRef.current,
-          language: langCmd.lang,
-        };
-        setSettings(newSettings);
-        try {
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
-        } catch {
-          // ignore
+          return;
         }
 
-        // Add JARVIS confirmation bubble
-        const confirmText = LANG_CONFIRM[langCmd.lang];
-        const jarvisMsg: Message = {
-          id: makeId(),
-          role: "jarvis",
-          content: confirmText,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, jarvisMsg]);
+        // Language command detection
+        const langCmd = detectLangCommand(text.trim());
+        if (langCmd) {
+          stopListening();
+          clearTranscript();
 
-        // Speak confirmation then resume listening
-        if (newSettings.ttsEnabled) {
-          setStatus("speaking");
-          await speak(
-            confirmText,
-            newSettings.voiceSpeed,
-            newSettings.voiceName,
-            () => {
-              setStatus("idle");
-              if (isVoiceModeRef.current) {
-                setTimeout(() => {
-                  if (isVoiceModeRef.current) {
-                    startListening(langCmd.lang);
-                  }
-                }, 300);
-              }
-            },
-          );
-        } else {
-          setStatus("idle");
-          if (isVoiceModeRef.current) {
-            setTimeout(() => {
-              if (isVoiceModeRef.current) {
-                startListening(langCmd.lang);
-              }
-            }, 300);
+          const userMsg: Message = {
+            id: makeId(),
+            role: "user",
+            content: text,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, userMsg]);
+
+          const newSettings: AppSettings = {
+            ...settingsRef.current,
+            language: langCmd.lang,
+          };
+          setSettings(newSettings);
+          try {
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+          } catch {
+            // ignore
           }
+
+          const confirmText = LANG_CONFIRM[langCmd.lang];
+          const jarvisMsg: Message = {
+            id: makeId(),
+            role: "jarvis",
+            content: confirmText,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, jarvisMsg]);
+
+          if (newSettings.ttsEnabled) {
+            const profile = getActiveProfile(newSettings);
+            setStatus("speaking");
+            await speak(
+              confirmText,
+              newSettings.voiceSpeed,
+              getActiveTtsVoice(newSettings),
+              () => {
+                setStatus("idle");
+                if (isVoiceModeRef.current) {
+                  setTimeout(() => {
+                    if (isVoiceModeRef.current) {
+                      startListening(langCmd.lang);
+                    }
+                  }, 300);
+                }
+              },
+              profile.browserPitch,
+              profile.preferFemale,
+            );
+          } else {
+            setStatus("idle");
+            if (isVoiceModeRef.current) {
+              setTimeout(() => {
+                if (isVoiceModeRef.current) {
+                  startListening(langCmd.lang);
+                }
+              }, 300);
+            }
+          }
+          return;
         }
-        return;
       }
 
       stopListening();
@@ -340,20 +386,22 @@ export default function App() {
       const userMsg: Message = {
         id: makeId(),
         role: "user",
-        content: text,
+        content: text || "What do you see in this image?",
         timestamp: new Date(),
+        imageData,
       };
 
       setMessages((prev) => [...prev, userMsg]);
       setStatus("processing");
 
       try {
+        const curSettings = settingsRef.current;
+        const curProfile = getActiveProfile(curSettings);
         const history = [...messages, userMsg];
         const response = await generateResponse(
           history,
-          settings.language,
+          curSettings.language,
           (fromApi, toApi) => {
-            // Show API switch notification in chat
             const switchMsg: Message = {
               id: makeId(),
               role: "jarvis",
@@ -362,6 +410,7 @@ export default function App() {
             };
             setMessages((prev) => [...prev, switchMsg]);
           },
+          getActivePersonality(curSettings),
         );
 
         const jarvisMsg: Message = {
@@ -373,26 +422,31 @@ export default function App() {
 
         setMessages((prev) => [...prev, jarvisMsg]);
 
-        if (settings.ttsEnabled) {
+        if (curSettings.ttsEnabled) {
           setStatus("speaking");
-          await speak(response, settings.voiceSpeed, settings.voiceName, () => {
-            setStatus("idle");
-            // Auto-restart listening in voice mode after JARVIS finishes speaking
-            if (isVoiceModeRef.current) {
-              setTimeout(() => {
-                if (isVoiceModeRef.current) {
-                  startListening(settings.language);
-                }
-              }, 300);
-            }
-          });
+          await speak(
+            response,
+            curSettings.voiceSpeed,
+            getActiveTtsVoice(curSettings),
+            () => {
+              setStatus("idle");
+              if (isVoiceModeRef.current) {
+                setTimeout(() => {
+                  if (isVoiceModeRef.current) {
+                    startListening(curSettings.language);
+                  }
+                }, 300);
+              }
+            },
+            curProfile.browserPitch,
+            curProfile.preferFemale,
+          );
         } else {
           setStatus("idle");
-          // Auto-restart listening in voice mode when TTS disabled
           if (isVoiceModeRef.current) {
             setTimeout(() => {
               if (isVoiceModeRef.current) {
-                startListening(settings.language);
+                startListening(curSettings.language);
               }
             }, 300);
           }
@@ -411,7 +465,6 @@ export default function App() {
     },
     [
       messages,
-      settings,
       generateResponse,
       speak,
       stopListening,
@@ -447,6 +500,29 @@ export default function App() {
       handleSendMessage(text);
     },
     [handleSendMessage],
+  );
+
+  // Handle photo upload
+  const handlePhotoSend = useCallback(
+    async (file: File, caption: string) => {
+      if (!userName) return;
+      const used = getPhotoUsageCount(userName);
+      if (used >= MAX_PHOTOS_PER_DAY) return;
+
+      // Convert to base64 data URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        if (!dataUrl) return;
+        incrementPhotoUsage(userName);
+        setPhotosUsedToday(getPhotoUsageCount(userName));
+        setIsVoiceMode(false);
+        isVoiceModeRef.current = false;
+        handleSendMessage(caption, dataUrl);
+      };
+      reader.readAsDataURL(file);
+    },
+    [userName, handleSendMessage],
   );
 
   const handleSaveSettings = useCallback((newSettings: AppSettings) => {
@@ -672,12 +748,15 @@ export default function App() {
                   status={status}
                   settings={settings}
                   onSendMessage={handleTextSend}
+                  onSendPhoto={handlePhotoSend}
                   onStartListening={handleStartListening}
                   onStopListening={handleStopListening}
                   transcript={transcript}
                   speechSupported={speechSupported}
                   isVoiceMode={isVoiceMode}
                   onClearChat={handleClearChat}
+                  photosUsedToday={photosUsedToday}
+                  maxPhotosPerDay={MAX_PHOTOS_PER_DAY}
                 />
               </div>
             </motion.div>

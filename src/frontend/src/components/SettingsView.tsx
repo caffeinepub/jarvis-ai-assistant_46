@@ -14,12 +14,14 @@ import {
   Info,
   Mic,
   Save,
+  User,
   Volume2,
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AppSettings } from "../types";
+import { VOICE_PROFILES } from "../types";
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -85,11 +87,64 @@ export function SettingsView({ settings, onSave }: SettingsViewProps) {
   const [local, setLocal] = useState<AppSettings>({ ...settings });
   const [saved, setSaved] = useState(false);
   const [capOpen, setCapOpen] = useState(false);
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  // Clean up speech on unmount
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, []);
 
   const handleSave = () => {
     onSave(local);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handlePlaySample = (profileId: string) => {
+    if (playingVoiceId === profileId) {
+      // Stop
+      window.speechSynthesis.cancel();
+      setPlayingVoiceId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const profile = VOICE_PROFILES.find((p) => p.id === profileId);
+    if (!profile) return;
+
+    const utter = new SpeechSynthesisUtterance(profile.sampleText);
+
+    // Pick a matching browser voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferFemale = profile.gender === "female";
+    const filtered = voices.filter((v) =>
+      preferFemale
+        ? v.name.toLowerCase().includes("female") ||
+          v.name.toLowerCase().includes("woman") ||
+          v.name.toLowerCase().includes("zira") ||
+          v.name.toLowerCase().includes("samantha") ||
+          v.name.toLowerCase().includes("victoria")
+        : !v.name.toLowerCase().includes("female") &&
+          !v.name.toLowerCase().includes("woman"),
+    );
+    const enVoices = (filtered.length > 0 ? filtered : voices).filter((v) =>
+      v.lang.startsWith("en"),
+    );
+    if (enVoices.length > 0) {
+      utter.voice = enVoices[0];
+    }
+    utter.rate = 1.0;
+    utter.pitch = profile.gender === "female" ? 1.2 : 0.9;
+
+    synthRef.current = utter;
+    utter.onend = () => setPlayingVoiceId(null);
+    utter.onerror = () => setPlayingVoiceId(null);
+
+    setPlayingVoiceId(profileId);
+    window.speechSynthesis.speak(utter);
   };
 
   const cardStyle = {
@@ -198,6 +253,118 @@ export function SettingsView({ settings, onSave }: SettingsViewProps) {
         </AnimatePresence>
       </div>
 
+      {/* Voice Character Selection */}
+      <div className="rounded-xl p-4" style={cardStyle}>
+        <div className="flex items-center gap-2 mb-4">
+          <User size={14} style={{ color: "#20D6FF" }} />
+          <span
+            className="text-xs font-orbitron uppercase tracking-wider"
+            style={{ color: "#20D6FF" }}
+          >
+            Voice Character
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {VOICE_PROFILES.map((profile) => {
+            const isSelected = local.selectedVoice === profile.id;
+            const isPlaying = playingVoiceId === profile.id;
+            return (
+              <motion.div
+                key={profile.id}
+                onClick={() =>
+                  setLocal((prev) => ({ ...prev, selectedVoice: profile.id }))
+                }
+                className="relative rounded-xl p-3 cursor-pointer flex flex-col gap-2 transition-all duration-200"
+                style={{
+                  background: "rgba(8,20,26,0.8)",
+                  border: `1px solid ${
+                    isSelected ? profile.color : `${profile.color}40`
+                  }`,
+                  boxShadow: isSelected
+                    ? `0 0 16px ${profile.color}40, inset 0 0 12px ${profile.color}10`
+                    : "none",
+                  backdropFilter: "blur(12px)",
+                }}
+                whileHover={{
+                  boxShadow: `0 0 10px ${profile.color}30`,
+                  borderColor: `${profile.color}99`,
+                }}
+                data-ocid={`settings.voice.${profile.id}.card`}
+              >
+                {/* Selected indicator */}
+                {isSelected && (
+                  <div
+                    className="absolute top-2 right-2 w-2 h-2 rounded-full"
+                    style={{
+                      background: profile.color,
+                      boxShadow: `0 0 6px ${profile.color}`,
+                    }}
+                  />
+                )}
+
+                {/* Icon + Name */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{profile.icon}</span>
+                  <div>
+                    <p
+                      className="text-xs font-orbitron font-bold tracking-wider leading-tight"
+                      style={{
+                        color: isSelected
+                          ? profile.color
+                          : "oklch(0.94 0.015 220)",
+                        textShadow: isSelected
+                          ? `0 0 8px ${profile.color}80`
+                          : "none",
+                      }}
+                    >
+                      {profile.name}
+                    </p>
+                    <span
+                      className="text-[9px] font-orbitron uppercase tracking-widest"
+                      style={{
+                        color:
+                          profile.gender === "female"
+                            ? "rgba(57,217,138,0.7)"
+                            : "rgba(32,214,255,0.5)",
+                      }}
+                    >
+                      {profile.gender}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sample button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePlaySample(profile.id);
+                  }}
+                  className="w-full text-[10px] font-orbitron uppercase tracking-wider py-1.5 rounded-lg transition-all duration-200"
+                  style={{
+                    background: isPlaying
+                      ? `${profile.color}25`
+                      : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${
+                      isPlaying
+                        ? `${profile.color}80`
+                        : "rgba(255,255,255,0.08)"
+                    }`,
+                    color: isPlaying ? profile.color : "rgba(143,167,183,0.7)",
+                    boxShadow: isPlaying
+                      ? `0 0 8px ${profile.color}30`
+                      : "none",
+                  }}
+                  data-ocid={`settings.voice.${profile.id}.button`}
+                >
+                  {isPlaying ? "⏹ Stop" : "▶ Sample"}
+                </button>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Language */}
       <div className="rounded-xl p-4" style={cardStyle}>
         <div className="flex items-center gap-2 mb-3">
@@ -301,31 +468,6 @@ export function SettingsView({ settings, onSave }: SettingsViewProps) {
               }
               disabled={!local.ttsEnabled}
               data-ocid="settings.toggle"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label
-              className="text-xs"
-              style={{ color: "rgba(143,167,183,0.8)" }}
-            >
-              Voice Profile
-            </Label>
-            <input
-              type="text"
-              value={local.voiceName}
-              onChange={(e) =>
-                setLocal((prev) => ({ ...prev, voiceName: e.target.value }))
-              }
-              disabled={!local.ttsEnabled}
-              placeholder="e.g. en-US-Neural2-D"
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
-              style={{
-                background: "rgba(8,20,26,0.6)",
-                border: "1px solid rgba(32,214,255,0.2)",
-                color: "oklch(0.94 0.015 220)",
-                caretColor: "#20D6FF",
-              }}
-              data-ocid="settings.input"
             />
           </div>
         </div>

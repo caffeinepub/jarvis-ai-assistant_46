@@ -15,20 +15,59 @@ export function useTTS() {
   }, []);
 
   const speakWithBrowserTTS = useCallback(
-    (text: string, speed: number): Promise<void> => {
+    (
+      text: string,
+      speed: number,
+      pitch: number,
+      preferFemale: boolean,
+    ): Promise<void> => {
       return new Promise((resolve) => {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = speed;
-        utterance.pitch = 0.9;
+        utterance.pitch = pitch;
         utterance.volume = 1;
+
         const voices = window.speechSynthesis.getVoices();
-        const preferred =
-          voices.find(
-            (v) => v.lang === "en-US" && v.name.toLowerCase().includes("male"),
-          ) ||
-          voices.find((v) => v.lang === "en-US") ||
-          voices[0];
-        if (preferred) utterance.voice = preferred;
+        const enVoices = voices.filter((v) => v.lang.startsWith("en"));
+
+        let selectedVoice: SpeechSynthesisVoice | undefined;
+
+        if (preferFemale) {
+          // Try to find a female voice
+          selectedVoice =
+            enVoices.find(
+              (v) =>
+                v.name.toLowerCase().includes("female") ||
+                v.name.toLowerCase().includes("woman") ||
+                v.name.toLowerCase().includes("zira") ||
+                v.name.toLowerCase().includes("samantha") ||
+                v.name.toLowerCase().includes("victoria") ||
+                v.name.toLowerCase().includes("karen") ||
+                v.name.toLowerCase().includes("moira") ||
+                v.name.toLowerCase().includes("tessa") ||
+                v.name.toLowerCase().includes("fiona"),
+            ) ||
+            enVoices.find(
+              (v) =>
+                !v.name.toLowerCase().includes("male") &&
+                !v.name.toLowerCase().includes("man"),
+            ) ||
+            enVoices[0];
+        } else {
+          // Try to find a male voice
+          selectedVoice =
+            enVoices.find(
+              (v) =>
+                v.name.toLowerCase().includes("male") ||
+                v.name.toLowerCase().includes("man") ||
+                v.name.toLowerCase().includes("daniel") ||
+                v.name.toLowerCase().includes("david") ||
+                v.name.toLowerCase().includes("james") ||
+                v.name.toLowerCase().includes("alex"),
+            ) || enVoices[0];
+        }
+
+        if (selectedVoice) utterance.voice = selectedVoice;
         utterance.onend = () => resolve();
         utterance.onerror = () => resolve();
         window.speechSynthesis.speak(utterance);
@@ -43,6 +82,8 @@ export function useTTS() {
       speed = 1.0,
       voiceName = "en-US-Neural2-D",
       onEnd?: () => void,
+      browserPitch = 0.9,
+      preferFemale = false,
     ): Promise<void> => {
       stopSpeaking();
 
@@ -72,9 +113,9 @@ export function useTTS() {
         };
         await audio.play();
       } catch {
-        // Fallback to browser TTS
+        // Fallback to browser TTS with character-specific pitch/gender
         try {
-          await speakWithBrowserTTS(text, speed);
+          await speakWithBrowserTTS(text, speed, browserPitch, preferFemale);
         } catch {
           // silent
         } finally {
