@@ -19,7 +19,8 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useTTS } from "../hooks/useTTS";
 import type { AppSettings } from "../types";
 import { VOICE_PROFILES } from "../types";
 
@@ -88,14 +89,14 @@ export function SettingsView({ settings, onSave }: SettingsViewProps) {
   const [saved, setSaved] = useState(false);
   const [capOpen, setCapOpen] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
-  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const { playSample, stopSpeaking } = useTTS();
 
   // Clean up speech on unmount
   useEffect(() => {
     return () => {
-      window.speechSynthesis.cancel();
+      stopSpeaking();
     };
-  }, []);
+  }, [stopSpeaking]);
 
   const handleSave = () => {
     onSave(local);
@@ -103,48 +104,25 @@ export function SettingsView({ settings, onSave }: SettingsViewProps) {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handlePlaySample = (profileId: string) => {
+  const handlePlaySample = async (profileId: string) => {
     if (playingVoiceId === profileId) {
-      // Stop
-      window.speechSynthesis.cancel();
+      stopSpeaking();
       setPlayingVoiceId(null);
       return;
     }
-
-    window.speechSynthesis.cancel();
+    stopSpeaking();
     const profile = VOICE_PROFILES.find((p) => p.id === profileId);
     if (!profile) return;
 
-    const utter = new SpeechSynthesisUtterance(profile.sampleText);
-
-    // Pick a matching browser voice
-    const voices = window.speechSynthesis.getVoices();
-    const preferFemale = profile.gender === "female";
-    const filtered = voices.filter((v) =>
-      preferFemale
-        ? v.name.toLowerCase().includes("female") ||
-          v.name.toLowerCase().includes("woman") ||
-          v.name.toLowerCase().includes("zira") ||
-          v.name.toLowerCase().includes("samantha") ||
-          v.name.toLowerCase().includes("victoria")
-        : !v.name.toLowerCase().includes("female") &&
-          !v.name.toLowerCase().includes("woman"),
-    );
-    const enVoices = (filtered.length > 0 ? filtered : voices).filter((v) =>
-      v.lang.startsWith("en"),
-    );
-    if (enVoices.length > 0) {
-      utter.voice = enVoices[0];
-    }
-    utter.rate = 1.0;
-    utter.pitch = profile.gender === "female" ? 1.2 : 0.9;
-
-    synthRef.current = utter;
-    utter.onend = () => setPlayingVoiceId(null);
-    utter.onerror = () => setPlayingVoiceId(null);
-
     setPlayingVoiceId(profileId);
-    window.speechSynthesis.speak(utter);
+    await playSample(
+      profile.sampleText,
+      profile.elevenLabsVoiceName,
+      profile.browserPitch,
+      profile.browserRate,
+      profile.preferFemale,
+      () => setPlayingVoiceId(null),
+    );
   };
 
   const cardStyle = {

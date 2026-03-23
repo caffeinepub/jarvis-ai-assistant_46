@@ -123,7 +123,7 @@ function getActiveProfile(settings: AppSettings) {
 }
 
 function getActiveTtsVoice(settings: AppSettings): string {
-  return getActiveProfile(settings).ttsVoice;
+  return getActiveProfile(settings).elevenLabsVoiceName;
 }
 
 function getActivePersonality(settings: AppSettings): string {
@@ -166,8 +166,11 @@ function isStopCommand(text: string): boolean {
     t === "quiet" ||
     t === "be quiet" ||
     t === "shut up" ||
-    t.startsWith("stop ") ||
-    t.endsWith(" stop")
+    t === "ruk ja" ||
+    t === "ruk" ||
+    t === "bas" ||
+    t === "chup" ||
+    t === "chup ho ja"
   );
 }
 
@@ -249,79 +252,126 @@ export default function App() {
   }, [isListening]);
 
   // ── Background stop-word detection while JARVIS is speaking ──────────────
-  // When JARVIS is speaking in hands-free mode, listen in background for "stop"
-  const stopListenerRef = useRef<{
-    recognition: {
-      stop: () => void;
-      abort: () => void;
-    } | null;
-  }>({ recognition: null });
-
+  // Active whenever JARVIS is speaking (regardless of voice mode)
+  // Uses continuous restart so it never misses the "stop" command
+  const stopListenerRef = useRef<{ abort: () => void } | null>(null);
+  const isSpeakingRef = useRef(false);
+  const stopSpeakingRef = useRef(stopSpeaking);
   useEffect(() => {
-    if (status !== "speaking" || !isVoiceMode) {
-      // Clean up any existing stop listener
-      if (stopListenerRef.current.recognition) {
-        stopListenerRef.current.recognition.abort();
-        stopListenerRef.current.recognition = null;
-      }
-      return;
-    }
+    stopSpeakingRef.current = stopSpeaking;
+  }, [stopSpeaking]);
 
-    // Start background recognition to detect stop command
+  // Keep isSpeakingRef in sync
+  useEffect(() => {
+    isSpeakingRef.current = status === "speaking";
+  }, [status]);
+
+  const startStopListener = useCallback(() => {
     const SpeechRecognitionCtor =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) return;
 
+    // Abort any existing listener first
+    if (stopListenerRef.current) {
+      try {
+        stopListenerRef.current.abort();
+      } catch {
+        /* ignore */
+      }
+      stopListenerRef.current = null;
+    }
+
     try {
       const recognition = new SpeechRecognitionCtor();
-      stopListenerRef.current.recognition = recognition;
+      stopListenerRef.current = recognition;
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = "en-US";
 
-      recognition.onresult = (e: { results: SpeechRecognitionResultList }) => {
+      recognition.onresult = (e: {
+        results: {
+          length: number;
+          [i: number]: { [j: number]: { transcript: string } };
+        };
+      }) => {
         let heard = "";
         for (let i = 0; i < e.results.length; i++) {
           heard += e.results[i][0]?.transcript ?? "";
         }
         if (isStopCommand(heard)) {
-          recognition.abort();
-          stopListenerRef.current.recognition = null;
+          try {
+            recognition.abort();
+          } catch {
+            /* ignore */
+          }
+          stopListenerRef.current = null;
           // Stop JARVIS immediately
-          isVoiceModeRef.current = false;
-          setIsVoiceMode(false);
-          stopSpeaking();
+          stopSpeakingRef.current();
           setStatus("idle");
+          setIsVoiceMode(false);
+          isVoiceModeRef.current = false;
         }
       };
 
       recognition.onend = () => {
-        // If still speaking and voice mode still on, restart stop listener
-        if (
-          stopListenerRef.current.recognition === recognition &&
-          isVoiceModeRef.current
-        ) {
-          stopListenerRef.current.recognition = null;
-          // Will re-trigger via status/isVoiceMode dep change or next render
+        // Only restart if JARVIS is still speaking
+        if (isSpeakingRef.current && stopListenerRef.current === recognition) {
+          stopListenerRef.current = null;
+          // Small delay to avoid rapid restart loops
+          setTimeout(() => {
+            if (isSpeakingRef.current) {
+              startStopListener();
+            }
+          }, 100);
+        } else if (stopListenerRef.current === recognition) {
+          stopListenerRef.current = null;
         }
       };
 
       recognition.onerror = () => {
-        stopListenerRef.current.recognition = null;
+        if (stopListenerRef.current === recognition) {
+          stopListenerRef.current = null;
+          // Retry on error if still speaking
+          setTimeout(() => {
+            if (isSpeakingRef.current) {
+              startStopListener();
+            }
+          }, 300);
+        }
       };
 
       recognition.start();
     } catch {
-      // Speech recognition failed to start — ignore
+      stopListenerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === "speaking") {
+      startStopListener();
+    } else {
+      // Clean up listener when JARVIS stops speaking
+      if (stopListenerRef.current) {
+        try {
+          stopListenerRef.current.abort();
+        } catch {
+          /* ignore */
+        }
+        stopListenerRef.current = null;
+      }
     }
 
     return () => {
-      if (stopListenerRef.current.recognition) {
-        stopListenerRef.current.recognition.abort();
-        stopListenerRef.current.recognition = null;
+      if (stopListenerRef.current) {
+        try {
+          stopListenerRef.current.abort();
+        } catch {
+          /* ignore */
+        }
+        stopListenerRef.current = null;
       }
     };
-  }, [status, isVoiceMode, stopSpeaking]);
+  }, [status, startStopListener]);
   // ─────────────────────────────────────────────────────────────────────────
 
   const handleClearChat = useCallback(() => {

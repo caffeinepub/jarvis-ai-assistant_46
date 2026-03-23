@@ -1,6 +1,44 @@
 import { useCallback, useRef } from "react";
 
-const TTS_API_KEY = "sk-tts-473045180c7b4ce88c8d35dad59e5517";
+const ELEVENLABS_API_KEY =
+  "sk_1853e3d4a1ec41c56279c03db0562e18b735421652302533";
+
+// Module-level cache for ElevenLabs voice IDs (name -> id)
+let voiceCache: Record<string, string> | null = null;
+let voiceCacheFetching: Promise<Record<string, string>> | null = null;
+
+async function fetchElevenLabsVoices(): Promise<Record<string, string>> {
+  if (voiceCache) return voiceCache;
+  if (voiceCacheFetching) return voiceCacheFetching;
+
+  voiceCacheFetching = fetch("https://api.elevenlabs.io/v1/voices", {
+    headers: { "xi-api-key": ELEVENLABS_API_KEY },
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error("Failed to fetch voices");
+      return res.json();
+    })
+    .then((data) => {
+      const cache: Record<string, string> = {};
+      for (const v of data.voices ?? []) {
+        cache[v.name.toLowerCase()] = v.voice_id;
+      }
+      voiceCache = cache;
+      voiceCacheFetching = null;
+      return cache;
+    })
+    .catch(() => {
+      voiceCacheFetching = null;
+      return {};
+    });
+
+  return voiceCacheFetching;
+}
+
+async function getElevenLabsVoiceId(name: string): Promise<string | null> {
+  const cache = await fetchElevenLabsVoices();
+  return cache[name.toLowerCase()] ?? null;
+}
 
 export function useTTS() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -33,7 +71,6 @@ export function useTTS() {
         let selectedVoice: SpeechSynthesisVoice | undefined;
 
         if (preferFemale) {
-          // Try to find a female voice
           selectedVoice =
             enVoices.find(
               (v) =>
@@ -54,7 +91,6 @@ export function useTTS() {
             ) ||
             enVoices[0];
         } else {
-          // Try to find a male voice
           selectedVoice =
             enVoices.find(
               (v) =>
@@ -80,7 +116,7 @@ export function useTTS() {
     async (
       text: string,
       speed = 1.0,
-      voiceName = "en-US-Neural2-D",
+      elevenLabsVoiceName = "Titan",
       onEnd?: () => void,
       browserPitch = 0.9,
       preferFemale = false,
@@ -88,16 +124,30 @@ export function useTTS() {
       stopSpeaking();
 
       try {
-        const res = await fetch("https://api.tts.ai/v1/speech", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${TTS_API_KEY}`,
-          },
-          body: JSON.stringify({ text, voice: voiceName, speed }),
-        });
+        const voiceId = await getElevenLabsVoiceId(elevenLabsVoiceName);
+        if (!voiceId) throw new Error("Voice ID not found");
 
-        if (!res.ok) throw new Error("TTS API failed");
+        const res = await fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "xi-api-key": ELEVENLABS_API_KEY,
+            },
+            body: JSON.stringify({
+              text,
+              model_id: "eleven_monolingual_v1",
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75,
+                speed: speed,
+              },
+            }),
+          },
+        );
+
+        if (!res.ok) throw new Error(`ElevenLabs API error: ${res.status}`);
 
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -113,7 +163,7 @@ export function useTTS() {
         };
         await audio.play();
       } catch {
-        // Fallback to browser TTS with character-specific pitch/gender
+        // Fallback to browser TTS
         try {
           await speakWithBrowserTTS(text, speed, browserPitch, preferFemale);
         } catch {
@@ -126,5 +176,74 @@ export function useTTS() {
     [stopSpeaking, speakWithBrowserTTS],
   );
 
-  return { speak, stopSpeaking };
+  // Separate function for playing sample using ElevenLabs
+  const playSample = useCallback(
+    async (
+      text: string,
+      elevenLabsVoiceName: string,
+      browserPitch: number,
+      browserRate: number,
+      preferFemale: boolean,
+      onEnd?: () => void,
+    ): Promise<void> => {
+      stopSpeaking();
+
+      try {
+        const voiceId = await getElevenLabsVoiceId(elevenLabsVoiceName);
+        if (!voiceId) throw new Error("Voice not found");
+
+        const res = await fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "xi-api-key": ELEVENLABS_API_KEY,
+            },
+            body: JSON.stringify({
+              text,
+              model_id: "eleven_monolingual_v1",
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75,
+              },
+            }),
+          },
+        );
+
+        if (!res.ok) throw new Error("ElevenLabs error");
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          onEnd?.();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          onEnd?.();
+        };
+        await audio.play();
+      } catch {
+        // Fallback to browser TTS for sample
+        try {
+          await speakWithBrowserTTS(
+            text,
+            browserRate,
+            browserPitch,
+            preferFemale,
+          );
+        } catch {
+          // silent
+        } finally {
+          onEnd?.();
+        }
+      }
+    },
+    [stopSpeaking, speakWithBrowserTTS],
+  );
+
+  return { speak, stopSpeaking, playSample };
 }
