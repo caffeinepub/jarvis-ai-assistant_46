@@ -59,6 +59,18 @@ const capabilities = [
       "Auto-switches to Gemini, OpenAI, DeepSeek if quota runs out",
       "Announces API switch in chat for transparency",
       "Responds to general questions, advice, and conversations",
+      "Image generation — say 'generate image of...' or 'image banao...'",
+    ],
+  },
+  {
+    category: "Image Generation",
+    icon: "🎨",
+    items: [
+      'Say "generate image of a sunset" to create AI images',
+      'Hindi: "image banao ek pahaad ka" or "tasveer banao..."',
+      "Images generated instantly using Pollinations AI",
+      "Generated images appear directly in the chat",
+      "Works with any creative description or scene",
     ],
   },
   {
@@ -123,6 +135,9 @@ export function SettingsView({ settings, onSave }: SettingsViewProps) {
       profile.preferFemale,
       () => setPlayingVoiceId(null),
       profile.elevenLabsVoiceId,
+      profile.stability,
+      profile.similarityBoost,
+      profile.style,
     );
   };
 

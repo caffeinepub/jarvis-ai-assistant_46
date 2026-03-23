@@ -54,6 +54,33 @@ function detectLangCommand(text: string): LangCommand {
   return null;
 }
 
+function detectImageCommand(text: string): string | null {
+  const t = text.trim();
+  const patterns = [
+    /^generate image (?:of\s+)?(.+)$/i,
+    /^create image (?:of\s+)?(.+)$/i,
+    /^make image (?:of\s+)?(.+)$/i,
+    /^draw (.+)$/i,
+    /^image (?:of\s+)?(.+)$/i,
+    /^generate (.+) image$/i,
+    /^show image (?:of\s+)?(.+)$/i,
+    // Hinglish/Hindi
+    /^image banao (.+)$/i,
+    /^image bana (.+)$/i,
+    /^(.+) ki image banao$/i,
+    /^(.+) ka image banao$/i,
+    /^(.+) ki photo banao$/i,
+    /^photo banao (.+)$/i,
+    /^tasveer banao (.+)$/i,
+    /^(.+) tasveer banao$/i,
+  ];
+  for (const pattern of patterns) {
+    const match = t.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
 function detectSearchCommand(text: string): string | null {
   const t = text.trim();
   const patterns = [
@@ -256,8 +283,6 @@ export default function App() {
   }, [isListening]);
 
   // ── Background stop-word detection while JARVIS is speaking ──────────────
-  // Active whenever JARVIS is speaking (regardless of voice mode)
-  // Uses continuous restart so it never misses the "stop" command
   const stopListenerRef = useRef<{ abort: () => void } | null>(null);
   const isSpeakingRef = useRef(false);
   const stopSpeakingRef = useRef(stopSpeaking);
@@ -275,7 +300,6 @@ export default function App() {
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) return;
 
-    // Abort any existing listener first
     if (stopListenerRef.current) {
       try {
         stopListenerRef.current.abort();
@@ -309,7 +333,6 @@ export default function App() {
             /* ignore */
           }
           stopListenerRef.current = null;
-          // Stop JARVIS immediately
           stopSpeakingRef.current();
           setStatus("idle");
           setIsVoiceMode(false);
@@ -318,10 +341,8 @@ export default function App() {
       };
 
       recognition.onend = () => {
-        // Only restart if JARVIS is still speaking
         if (isSpeakingRef.current && stopListenerRef.current === recognition) {
           stopListenerRef.current = null;
-          // Small delay to avoid rapid restart loops
           setTimeout(() => {
             if (isSpeakingRef.current) {
               startStopListener();
@@ -335,7 +356,6 @@ export default function App() {
       recognition.onerror = () => {
         if (stopListenerRef.current === recognition) {
           stopListenerRef.current = null;
-          // Retry on error if still speaking
           setTimeout(() => {
             if (isSpeakingRef.current) {
               startStopListener();
@@ -354,7 +374,6 @@ export default function App() {
     if (status === "speaking") {
       startStopListener();
     } else {
-      // Clean up listener when JARVIS stops speaking
       if (stopListenerRef.current) {
         try {
           stopListenerRef.current.abort();
@@ -387,7 +406,6 @@ export default function App() {
     async (text: string, imageData?: string) => {
       if (!text.trim() && !imageData) return;
 
-      // Stop command: just stop voice, don't send to AI
       if (isStopCommand(text) && !imageData) {
         stopSpeaking();
         setIsVoiceMode(false);
@@ -397,7 +415,6 @@ export default function App() {
         return;
       }
 
-      // Google search command detection (only for text-only messages)
       if (!imageData) {
         const searchQuery = detectSearchCommand(text.trim());
         if (searchQuery) {
@@ -446,6 +463,10 @@ export default function App() {
               profile.browserPitch,
               profile.preferFemale,
               getActiveVoiceId(settingsRef.current),
+              settingsRef.current.language,
+              profile.stability,
+              profile.similarityBoost,
+              profile.style,
             );
           } else {
             setStatus("idle");
@@ -460,7 +481,96 @@ export default function App() {
           return;
         }
 
-        // Language command detection
+        // Image generation
+        const imagePrompt = detectImageCommand(text.trim());
+        if (imagePrompt) {
+          stopListening();
+          clearTranscript();
+
+          const userMsg: Message = {
+            id: makeId(),
+            role: "user",
+            content: text,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, userMsg]);
+
+          const loadingMsg: Message = {
+            id: makeId(),
+            role: "jarvis",
+            content: `🎨 Generating image of "${imagePrompt}"... One moment, sir.`,
+            timestamp: new Date(),
+          };
+          const loadingId = loadingMsg.id;
+          setMessages((prev) => [...prev, loadingMsg]);
+          setStatus("processing");
+
+          try {
+            const seed = Math.floor(Math.random() * 999999);
+            const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=768&height=512&nologo=true&seed=${seed}`;
+
+            // Small delay to give Pollinations time to start generating
+            await new Promise((r) => setTimeout(r, 500));
+
+            const responseText = `Here is the image of "${imagePrompt}", sir.`;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === loadingId
+                  ? { ...m, content: responseText, generatedImageUrl: imageUrl }
+                  : m,
+              ),
+            );
+
+            if (settingsRef.current.ttsEnabled) {
+              const profile = getActiveProfile(settingsRef.current);
+              setStatus("speaking");
+              await speak(
+                responseText,
+                settingsRef.current.voiceSpeed,
+                getActiveTtsVoice(settingsRef.current),
+                () => {
+                  setStatus("idle");
+                  if (isVoiceModeRef.current) {
+                    setTimeout(() => {
+                      if (isVoiceModeRef.current)
+                        startListening(settingsRef.current.language);
+                    }, 300);
+                  }
+                },
+                profile.browserPitch,
+                profile.preferFemale,
+                getActiveVoiceId(settingsRef.current),
+                settingsRef.current.language,
+                profile.stability,
+                profile.similarityBoost,
+                profile.style,
+              );
+            } else {
+              setStatus("idle");
+              if (isVoiceModeRef.current) {
+                setTimeout(() => {
+                  if (isVoiceModeRef.current)
+                    startListening(settingsRef.current.language);
+                }, 300);
+              }
+            }
+          } catch {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === loadingId
+                  ? {
+                      ...m,
+                      content:
+                        "Sorry sir, image generation failed. Please try again.",
+                    }
+                  : m,
+              ),
+            );
+            setStatus("idle");
+          }
+          return;
+        }
+
         const langCmd = detectLangCommand(text.trim());
         if (langCmd) {
           stopListening();
@@ -514,6 +624,10 @@ export default function App() {
               profile.browserPitch,
               profile.preferFemale,
               getActiveVoiceId(newSettings),
+              langCmd.lang,
+              profile.stability,
+              profile.similarityBoost,
+              profile.style,
             );
           } else {
             setStatus("idle");
@@ -590,6 +704,10 @@ export default function App() {
             curProfile.browserPitch,
             curProfile.preferFemale,
             getActiveVoiceId(curSettings),
+            curSettings.language,
+            curProfile.stability,
+            curProfile.similarityBoost,
+            curProfile.style,
           );
         } else {
           setStatus("idle");
@@ -624,7 +742,6 @@ export default function App() {
     ],
   );
 
-  // Keep ref current so the isListening effect always calls latest version
   useEffect(() => {
     handleSendMessageRef.current = handleSendMessage;
   }, [handleSendMessage]);
@@ -652,14 +769,12 @@ export default function App() {
     [handleSendMessage],
   );
 
-  // Handle photo upload
   const handlePhotoSend = useCallback(
     async (file: File, caption: string) => {
       if (!userName) return;
       const used = getPhotoUsageCount(userName);
       if (used >= MAX_PHOTOS_PER_DAY) return;
 
-      // Convert to base64 data URL
       const reader = new FileReader();
       reader.onload = (e) => {
         const dataUrl = e.target?.result as string;
@@ -699,7 +814,6 @@ export default function App() {
     status === "processing" || status === "speaking" || isListening;
   const isSpeaking = status === "speaking";
 
-  // Show name entry if no user
   if (!userName) {
     return <NameEntryScreen onEnter={handleSetName} />;
   }
@@ -776,7 +890,6 @@ export default function App() {
 
           {/* User + Status + Lang Badge */}
           <div className="flex items-center gap-3">
-            {/* Language badge */}
             <div
               className="font-orbitron text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-full hidden sm:flex items-center"
               style={{
@@ -791,7 +904,6 @@ export default function App() {
               {LANG_BADGE[settings.language] ?? "EN"}
             </div>
 
-            {/* User name */}
             <div className="flex items-center gap-1.5">
               <span
                 className="font-orbitron text-[10px] uppercase tracking-wider hidden sm:inline"
@@ -814,7 +926,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Status dot */}
             <div className="flex items-center gap-2">
               <div
                 className="w-2 h-2 rounded-full"

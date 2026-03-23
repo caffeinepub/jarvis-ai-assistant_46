@@ -1,4 +1,5 @@
 import { motion } from "motion/react";
+import { useState } from "react";
 import type { Message } from "../types";
 
 interface ChatBubbleProps {
@@ -8,6 +9,97 @@ interface ChatBubbleProps {
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function GeneratedImage({ url, alt }: { url: string; alt: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const handleError = () => {
+    if (retryCount < 3) {
+      setTimeout(() => {
+        setRetryCount((c) => c + 1);
+        setError(false);
+      }, 2000);
+    } else {
+      setError(true);
+    }
+  };
+
+  // Add retry cache-bust param
+  const src = retryCount > 0 ? `${url}&retry=${retryCount}` : url;
+
+  return (
+    <div className="mt-3">
+      {!loaded && !error && (
+        <div
+          className="rounded-xl w-full max-w-sm flex items-center justify-center"
+          style={{
+            height: "200px",
+            background: "rgba(8,20,26,0.7)",
+            border: "1px solid rgba(32,214,255,0.2)",
+          }}
+        >
+          <div className="flex flex-col items-center gap-2">
+            <div
+              className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
+              style={{
+                borderColor: "rgba(32,214,255,0.6)",
+                borderTopColor: "transparent",
+              }}
+            />
+            <span
+              className="text-[10px] font-orbitron uppercase tracking-widest"
+              style={{ color: "rgba(32,214,255,0.5)" }}
+            >
+              Generating...
+            </span>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div
+          className="rounded-xl w-full max-w-sm flex items-center justify-center"
+          style={{
+            height: "100px",
+            background: "rgba(8,20,26,0.7)",
+            border: "1px solid rgba(255,59,59,0.3)",
+          }}
+        >
+          <span
+            className="text-[10px] font-orbitron uppercase tracking-widest"
+            style={{ color: "rgba(255,59,59,0.7)" }}
+          >
+            Image load failed
+          </span>
+        </div>
+      )}
+      <img
+        key={src}
+        src={src}
+        alt={alt}
+        className="rounded-xl w-full max-w-sm object-cover"
+        style={{
+          border: "1px solid rgba(32,214,255,0.3)",
+          boxShadow: "0 0 16px rgba(32,214,255,0.15)",
+          maxHeight: "320px",
+          display: loaded && !error ? "block" : "none",
+        }}
+        loading="eager"
+        onLoad={() => setLoaded(true)}
+        onError={handleError}
+      />
+      {(loaded || error) && (
+        <p
+          className="text-[9px] font-orbitron uppercase tracking-widest mt-1.5 opacity-50"
+          style={{ color: "#20D6FF" }}
+        >
+          AI Generated · Pollinations
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function ChatBubble({ message, index }: ChatBubbleProps) {
@@ -78,6 +170,9 @@ export function ChatBubble({ message, index }: ChatBubbleProps) {
             >
               {message.content}
             </p>
+            {message.generatedImageUrl && (
+              <GeneratedImage url={message.generatedImageUrl} alt="Generated" />
+            )}
           </div>
           <span
             className="text-[10px] pl-1"
