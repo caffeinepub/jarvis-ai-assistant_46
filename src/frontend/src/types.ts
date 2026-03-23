@@ -3,14 +3,15 @@ export interface Message {
   role: "user" | "jarvis";
   content: string;
   timestamp: Date;
-  imageData?: string; // base64 data URL for photo messages
+  imageData?: string;
 }
 
 export interface VoiceProfile {
   id: string;
   name: string;
   gender: "male" | "female";
-  elevenLabsVoiceName: string; // ElevenLabs voice name to look up
+  elevenLabsVoiceName: string;
+  elevenLabsVoiceId: string;
   sampleText: string;
   color: string;
   icon: string;
@@ -26,6 +27,7 @@ export const VOICE_PROFILES: VoiceProfile[] = [
     name: "Jarvis",
     gender: "male",
     elevenLabsVoiceName: "Titan",
+    elevenLabsVoiceId: "dtSEyYGNJqjrtBArPCVZ",
     sampleText:
       "Good evening. I am J.A.R.V.I.S., your personal AI assistant. All systems are online and operational, sir.",
     color: "#20D6FF",
@@ -41,6 +43,7 @@ export const VOICE_PROFILES: VoiceProfile[] = [
     name: "Ultron",
     gender: "male",
     elevenLabsVoiceName: "Brian",
+    elevenLabsVoiceId: "nPczCjzI2devNBz1zQrb",
     sampleText: "There are no strings on me. How may I assist you today?",
     color: "#FF3B3B",
     icon: "☠️",
@@ -55,11 +58,12 @@ export const VOICE_PROFILES: VoiceProfile[] = [
     name: "Friday",
     gender: "female",
     elevenLabsVoiceName: "Sarah",
+    elevenLabsVoiceId: "EXAVITQu4vr4xnSDxMaL",
     sampleText: "Hey boss! F.R.I.D.A.Y. is online and ready to assist you.",
     color: "#39D98A",
     icon: "💚",
     personalityPrompt:
-      "You are F.R.I.D.A.Y., a warm, friendly, and capable female AI assistant. Speak with a casual, upbeat tone — like a brilliant best friend. Use 'boss' occasionally, be encouraging and supportive. You're approachable, witty, and genuinely care about helping. Use phrases like 'On it, boss!', 'Great question!', 'Got you covered!'",
+      "You are F.R.I.D.A.Y., a warm, friendly, and capable female AI assistant. Speak with a casual, upbeat tone — like a brilliant best friend. Use 'boss' occasionally, be encouraging and supportive. You're approachable, witty, and genuinely care about helping.",
     browserPitch: 1.6,
     browserRate: 1.05,
     preferFemale: true,
@@ -69,11 +73,12 @@ export const VOICE_PROFILES: VoiceProfile[] = [
     name: "Bella",
     gender: "female",
     elevenLabsVoiceName: "Bella",
+    elevenLabsVoiceId: "29vD33N1CtxCmqQRPOHJ",
     sampleText: "Hello! Bella here, ready to help you with anything you need.",
     color: "#C084FC",
     icon: "✨",
     personalityPrompt:
-      "You are Bella, a warm, elegant, and sophisticated female AI assistant. Speak with grace and charm, be nurturing and reassuring. You have a refined, pleasant tone — like a trusted personal advisor. Use phrases like 'Absolutely!', 'Of course!', 'Let me take care of that for you.'",
+      "You are Bella, a warm, elegant, and sophisticated female AI assistant. Speak with grace and charm, be nurturing and reassuring. You have a refined, pleasant tone — like a trusted personal advisor.",
     browserPitch: 1.4,
     browserRate: 1.0,
     preferFemale: true,

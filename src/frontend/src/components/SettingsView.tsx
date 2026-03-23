@@ -122,6 +122,7 @@ export function SettingsView({ settings, onSave }: SettingsViewProps) {
       profile.browserRate,
       profile.preferFemale,
       () => setPlayingVoiceId(null),
+      profile.elevenLabsVoiceId,
     );
   };
 

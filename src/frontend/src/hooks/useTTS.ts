@@ -3,43 +3,6 @@ import { useCallback, useRef } from "react";
 const ELEVENLABS_API_KEY =
   "sk_1853e3d4a1ec41c56279c03db0562e18b735421652302533";
 
-// Module-level cache for ElevenLabs voice IDs (name -> id)
-let voiceCache: Record<string, string> | null = null;
-let voiceCacheFetching: Promise<Record<string, string>> | null = null;
-
-async function fetchElevenLabsVoices(): Promise<Record<string, string>> {
-  if (voiceCache) return voiceCache;
-  if (voiceCacheFetching) return voiceCacheFetching;
-
-  voiceCacheFetching = fetch("https://api.elevenlabs.io/v1/voices", {
-    headers: { "xi-api-key": ELEVENLABS_API_KEY },
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error("Failed to fetch voices");
-      return res.json();
-    })
-    .then((data) => {
-      const cache: Record<string, string> = {};
-      for (const v of data.voices ?? []) {
-        cache[v.name.toLowerCase()] = v.voice_id;
-      }
-      voiceCache = cache;
-      voiceCacheFetching = null;
-      return cache;
-    })
-    .catch(() => {
-      voiceCacheFetching = null;
-      return {};
-    });
-
-  return voiceCacheFetching;
-}
-
-async function getElevenLabsVoiceId(name: string): Promise<string | null> {
-  const cache = await fetchElevenLabsVoices();
-  return cache[name.toLowerCase()] ?? null;
-}
-
 export function useTTS() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -112,53 +75,65 @@ export function useTTS() {
     [],
   );
 
+  const speakWithElevenLabs = useCallback(
+    async (
+      text: string,
+      voiceId: string,
+      speed = 1.0,
+    ): Promise<HTMLAudioElement> => {
+      const res = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "xi-api-key": ELEVENLABS_API_KEY,
+          },
+          body: JSON.stringify({
+            text,
+            model_id: "eleven_multilingual_v2",
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75,
+              speed: speed,
+            },
+          }),
+        },
+      );
+
+      if (!res.ok) throw new Error(`ElevenLabs API error: ${res.status}`);
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.onerror = () => URL.revokeObjectURL(url);
+      return audio;
+    },
+    [],
+  );
+
   const speak = useCallback(
     async (
       text: string,
       speed = 1.0,
-      elevenLabsVoiceName = "Titan",
+      _elevenLabsVoiceName = "",
       onEnd?: () => void,
       browserPitch = 0.9,
       preferFemale = false,
+      elevenLabsVoiceId = "pNInz6obpgDQGcFmaJgB",
     ): Promise<void> => {
       stopSpeaking();
 
       try {
-        const voiceId = await getElevenLabsVoiceId(elevenLabsVoiceName);
-        if (!voiceId) throw new Error("Voice ID not found");
-
-        const res = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "xi-api-key": ELEVENLABS_API_KEY,
-            },
-            body: JSON.stringify({
-              text,
-              model_id: "eleven_monolingual_v1",
-              voice_settings: {
-                stability: 0.5,
-                similarity_boost: 0.75,
-                speed: speed,
-              },
-            }),
-          },
-        );
-
-        if (!res.ok) throw new Error(`ElevenLabs API error: ${res.status}`);
-
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+        const audio = await speakWithElevenLabs(text, elevenLabsVoiceId, speed);
         audioRef.current = audio;
         audio.onended = () => {
-          URL.revokeObjectURL(url);
+          audioRef.current = null;
           onEnd?.();
         };
         audio.onerror = () => {
-          URL.revokeObjectURL(url);
+          audioRef.current = null;
           onEnd?.();
         };
         await audio.play();
@@ -173,61 +148,34 @@ export function useTTS() {
         }
       }
     },
-    [stopSpeaking, speakWithBrowserTTS],
+    [stopSpeaking, speakWithBrowserTTS, speakWithElevenLabs],
   );
 
-  // Separate function for playing sample using ElevenLabs
   const playSample = useCallback(
     async (
       text: string,
-      elevenLabsVoiceName: string,
+      _elevenLabsVoiceName: string,
       browserPitch: number,
       browserRate: number,
       preferFemale: boolean,
       onEnd?: () => void,
+      elevenLabsVoiceId = "pNInz6obpgDQGcFmaJgB",
     ): Promise<void> => {
       stopSpeaking();
 
       try {
-        const voiceId = await getElevenLabsVoiceId(elevenLabsVoiceName);
-        if (!voiceId) throw new Error("Voice not found");
-
-        const res = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "xi-api-key": ELEVENLABS_API_KEY,
-            },
-            body: JSON.stringify({
-              text,
-              model_id: "eleven_monolingual_v1",
-              voice_settings: {
-                stability: 0.5,
-                similarity_boost: 0.75,
-              },
-            }),
-          },
-        );
-
-        if (!res.ok) throw new Error("ElevenLabs error");
-
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+        const audio = await speakWithElevenLabs(text, elevenLabsVoiceId);
         audioRef.current = audio;
         audio.onended = () => {
-          URL.revokeObjectURL(url);
+          audioRef.current = null;
           onEnd?.();
         };
         audio.onerror = () => {
-          URL.revokeObjectURL(url);
+          audioRef.current = null;
           onEnd?.();
         };
         await audio.play();
       } catch {
-        // Fallback to browser TTS for sample
         try {
           await speakWithBrowserTTS(
             text,
@@ -242,7 +190,7 @@ export function useTTS() {
         }
       }
     },
-    [stopSpeaking, speakWithBrowserTTS],
+    [stopSpeaking, speakWithBrowserTTS, speakWithElevenLabs],
   );
 
   return { speak, stopSpeaking, playSample };

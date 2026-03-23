@@ -126,6 +126,10 @@ function getActiveTtsVoice(settings: AppSettings): string {
   return getActiveProfile(settings).elevenLabsVoiceName;
 }
 
+function getActiveVoiceId(settings: AppSettings): string {
+  return getActiveProfile(settings).elevenLabsVoiceId;
+}
+
 function getActivePersonality(settings: AppSettings): string {
   return getActiveProfile(settings).personalityPrompt;
 }
@@ -441,6 +445,7 @@ export default function App() {
               },
               profile.browserPitch,
               profile.preferFemale,
+              getActiveVoiceId(settingsRef.current),
             );
           } else {
             setStatus("idle");
@@ -508,6 +513,7 @@ export default function App() {
               },
               profile.browserPitch,
               profile.preferFemale,
+              getActiveVoiceId(newSettings),
             );
           } else {
             setStatus("idle");
@@ -583,6 +589,7 @@ export default function App() {
             },
             curProfile.browserPitch,
             curProfile.preferFemale,
+            getActiveVoiceId(curSettings),
           );
         } else {
           setStatus("idle");
